@@ -6,7 +6,7 @@ import requests
 import json
 import re
 import easygui
-from multiprocessing.dummy import Pool,Lock
+from multiprocessing.dummy import Pool, Lock
 
 title = "网易云歌词下载助手"
 
@@ -71,11 +71,14 @@ class LyricDownloader():
     SearchAPI = "http://music.163.com/api/search/get/web?csrf_token=hlpretag=&hlposttag=&s={{{}}}&type=1&offset=0&total=true&limit=100"
     LyricAPI = "http://music.163.com/api/song/lyric?id={}&lv=1&kv=1&tv=-1"
     LyricMatcher = re.compile(r"^(\[\d+:\d+.\d+\])(.*)$")
+    TimestampFixer = re.compile(r"^(\[\d+:\d+).(\d{2})\d*\]$")
+    SearchTitleFixer = re.compile(r"(#|&|\?)")
 
     @staticmethod
     def searchMusic(tag):
         "根据音乐tag搜索100首歌，计算音乐名和专辑名的编辑距离并排序，选最匹配的，返回音乐id"
-        songs = json.loads(requests.get(LyricDownloader.SearchAPI.format(tag['title'])).text)['result']['songs']
+        fixedTitle = LyricDownloader.SearchTitleFixer.sub('',tag['title']) #歌名不能带特殊字符，去掉
+        songs = json.loads(requests.get(LyricDownloader.SearchAPI.format(fixedTitle)).text)['result']['songs']
         distances = []
         for s in songs:
             id = s['id']
@@ -105,7 +108,8 @@ class LyricDownloader():
 
         mlrc = []
         for i in lrc:
-            ts = i[0].split('.')[0] + '.' + i[0].split('.')[1][:2] + ']'
+            # 网易云歌词的时间戳真的是太随便了，连[00:00:00]这种都有，搞了个时间戳修复
+            ts = '.'.join(LyricDownloader.TimestampFixer.match(i[0]).groups()) + ']'
             mlrc.append(f"{ts}{i[1]}  {tlrc.get(i[0], '')}")
         mlrc = '\n'.join(mlrc)
         return mlrc
@@ -115,7 +119,7 @@ class Main():
     def __init__(self):
         self.overwrite = False
         self.askIfOverwrite = True
-        self.config = json.load(open('./config.json','r',encoding='utf8'))
+        self.config = json.load(open('./config.json', 'r', encoding='utf8'))
         self.lock = Lock()
         if self.config['multiThread']:
             self.pool = Pool(self.config['threadNum'])
@@ -135,7 +139,7 @@ class Main():
             return self.overwrite
         else:
             self.lock.acquire()
-            if self.askIfOverwrite: #防止选了总是或者从不还是跳很多框
+            if self.askIfOverwrite:  # 防止选了总是或者从不还是跳很多框
                 answer = easygui.buttonbox("发现歌词已存在。是否覆盖？", title, ["是", "否", "总是", "从不"])
             else:
                 self.lock.release()
